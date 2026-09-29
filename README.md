@@ -46,7 +46,7 @@ optimizer statistics · plan selection
 ├── index.go        Row, Entry, Index, NewIndex, columnValue, ColIndex
 ├── table.go        Table
 ├── pred.go         Cond, Pred, Covers, eval, evalEntry
-├── stats.go        Stats, Cost, FetchCost, ScanCost
+├── stats.go        Stats, Cost, FetchCost, ScanCost, TempInsertCost
 │
 ├── index_ops.go    CompareKeys, Seek, RangeScan          ← step 1
 ├── scan.go         FullScan, IndexScan, CoveringScan, Extra   ← step 2
