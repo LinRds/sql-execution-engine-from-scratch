@@ -46,13 +46,14 @@ func (s Stats) Extra() string
 | `RowsFetched` | random row fetches | `FetchCost` |
 | `RowsScanned` | rows read in a sequential scan | `ScanCost` |
 
-Keeping them apart is the whole point — `Cost()` only means something if the
-counters it adds up are honest about which kind of work they measured.
+Implement them in `scan.go`. Keeping the counters apart is the whole point —
+`Cost()` only means something if the counters it adds up are honest about which
+kind of work they measured.
 
 ## What you should see
 
 ```bash
-go test ./...
+go test ./step2/
 ```
 
 Five tests, one per concept. The last one is the interesting one: it runs the

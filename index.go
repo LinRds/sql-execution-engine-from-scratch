@@ -1,8 +1,8 @@
-package step6
+package engine
 
 import "sort"
 
-// Row is one row of the table.
+// Row is one row of the table. Step 1 only needs these columns.
 type Row struct {
 	ID        int64
 	StaffID   int64
@@ -12,53 +12,20 @@ type Row struct {
 // Entry is one entry in an index.
 //
 // Key holds one value per indexed column, in the index's column order.
-// RowID is the primary key of the row this entry points at.
+// RowID is the primary key of the row this entry points at — the handle used
+// to fetch the full row in later steps.
 type Entry struct {
 	Key   []int64
 	RowID int64
 }
 
 // Index is a sorted index over a set of rows.
+//
+// Keys is sorted by Key, using the column order declared in Cols.
 type Index struct {
 	Name string
 	Cols []string
 	Keys []Entry
-}
-
-// CompareKeys compares two composite keys lexicographically.
-func CompareKeys(a, b []int64) int {
-	n := len(a)
-	if len(b) < n {
-		n = len(b)
-	}
-	for i := 0; i < n; i++ {
-		if a[i] != b[i] {
-			if a[i] < b[i] {
-				return -1
-			}
-			return 1
-		}
-	}
-	switch {
-	case len(a) < len(b):
-		return -1
-	case len(a) > len(b):
-		return 1
-	}
-	return 0
-}
-
-// Seek returns the index of the first entry whose Key is >= key, or
-// len(ix.Keys) when every key is smaller.
-func (ix *Index) Seek(key []int64) int {
-	return sort.Search(len(ix.Keys), func(i int) bool {
-		return CompareKeys(ix.Keys[i].Key, key) >= 0
-	})
-}
-
-// RangeScan returns every entry with lo <= Key < hi, in index order.
-func (ix *Index) RangeScan(lo, hi []int64) []Entry {
-	return ix.Keys[ix.Seek(lo):ix.Seek(hi)]
 }
 
 // ColIndex returns the position of a column in this index, or -1 when the
@@ -70,17 +37,6 @@ func (ix *Index) ColIndex(col string) int {
 		}
 	}
 	return -1
-}
-
-// Covers reports whether every column the predicate touches is carried by
-// this index. When it is, the predicate can be answered without the row.
-func (ix *Index) Covers(p Pred) bool {
-	for _, c := range p {
-		if ix.ColIndex(c.Col) < 0 {
-			return false
-		}
-	}
-	return true
 }
 
 // NewIndex builds an index over rows, sorted by the given columns.

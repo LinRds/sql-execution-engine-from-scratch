@@ -1,50 +1,54 @@
 package step5
 
-import "testing"
+import (
+	"testing"
+
+	"sql-execution-engine-from-scratch"
+)
 
 // sampleTable builds 1000 rows. staff_id has two values, 500 rows each;
 // id and created_at are unique.
-func sampleTable() *Table {
-	rows := make([]Row, 0, 1000)
+func sampleTable() *engine.Table {
+	rows := make([]engine.Row, 0, 1000)
 	for i := 0; i < 1000; i++ {
-		rows = append(rows, Row{
+		rows = append(rows, engine.Row{
 			ID:        int64(i + 1),
 			StaffID:   int64(i%2 + 1),
 			CreatedAt: 1700000000 + int64(i),
 		})
 	}
-	t := &Table{Rows: rows, ByID: make(map[int64]Row, len(rows))}
+	t := &engine.Table{Rows: rows, ByID: make(map[int64]engine.Row, len(rows))}
 	for _, r := range rows {
 		t.ByID[r.ID] = r
 	}
 	return t
 }
 
-func condEq(col string, v int64) Cond {
-	return Cond{Col: col, Ok: func(x int64) bool { return x == v }}
+func condEq(col string, v int64) engine.Cond {
+	return engine.Cond{Col: col, Ok: func(x int64) bool { return x == v }}
 }
 
-func condGe(col string, v int64) Cond {
-	return Cond{Col: col, Ok: func(x int64) bool { return x >= v }}
+func condGe(col string, v int64) engine.Cond {
+	return engine.Cond{Col: col, Ok: func(x int64) bool { return x >= v }}
 }
 
-func condLt(col string, v int64) Cond {
-	return Cond{Col: col, Ok: func(x int64) bool { return x < v }}
+func condLt(col string, v int64) engine.Cond {
+	return engine.Cond{Col: col, Ok: func(x int64) bool { return x < v }}
 }
 
 // E1: a condition on a column the index carries can be settled on the entry,
 // before the row is fetched. Entries it rejects never reach the table.
 func TestICP_FiltersBeforeFetchingTheRow(t *testing.T) {
 	tbl := sampleTable()
-	ix := NewIndex("idx_staff_created", []string{"staff_id", "created_at"}, tbl.Rows)
-	p := Pred{
+	ix := engine.NewIndex("idx_staff_created", []string{"staff_id", "created_at"}, tbl.Rows)
+	p := engine.Pred{
 		condEq("staff_id", 1),
 		condGe("created_at", 1700000800),
 		condGe("id", 900),
 	}
 
-	withICP, s := ScanWithICP(tbl, ix, []int64{1, 0}, []int64{2, 0}, p)
-	withoutICP, plain := ScanWithoutICP(tbl, ix, []int64{1, 0}, []int64{2, 0}, p)
+	withICP, s := engine.ScanWithICP(tbl, ix, []int64{1, 0}, []int64{2, 0}, p)
+	withoutICP, plain := engine.ScanWithoutICP(tbl, ix, []int64{1, 0}, []int64{2, 0}, p)
 
 	if s.RowsFetched >= plain.RowsFetched {
 		t.Fatalf("fetched %d rows with ICP and %d without — created_at is in this index, so the "+
@@ -61,14 +65,14 @@ func TestICP_FiltersBeforeFetchingTheRow(t *testing.T) {
 // Every entry in the range is fetched, and the predicate runs on the row.
 func TestNoICP_FiltersAfterFetchingTheRow(t *testing.T) {
 	tbl := sampleTable()
-	ix := NewIndex("idx_staff_created", []string{"staff_id", "created_at"}, tbl.Rows)
-	p := Pred{
+	ix := engine.NewIndex("idx_staff_created", []string{"staff_id", "created_at"}, tbl.Rows)
+	p := engine.Pred{
 		condEq("staff_id", 1),
 		condGe("created_at", 1700000800),
 		condGe("id", 900),
 	}
 
-	_, s := ScanWithoutICP(tbl, ix, []int64{1, 0}, []int64{2, 0}, p)
+	_, s := engine.ScanWithoutICP(tbl, ix, []int64{1, 0}, []int64{2, 0}, p)
 
 	if s.RowsFetched != s.IndexEntriesRead {
 		t.Fatalf("read %d entries and fetched %d rows — nothing was judged at the entry, so every "+
@@ -85,17 +89,17 @@ func TestNoICP_FiltersAfterFetchingTheRow(t *testing.T) {
 // that still has to be fetched. Either one missing and there is nothing to push.
 func TestICP_NeedsBothATableLookupAndAPushableCond(t *testing.T) {
 	tbl := sampleTable()
-	ix := NewIndex("idx_staff_created", []string{"staff_id", "created_at"}, tbl.Rows)
+	ix := engine.NewIndex("idx_staff_created", []string{"staff_id", "created_at"}, tbl.Rows)
 
-	covering := Pred{condEq("staff_id", 1), condGe("created_at", 1700000800)}
-	if _, s := ScanWithICP(tbl, ix, []int64{1, 0}, []int64{2, 0}, covering); s.UsedICP {
+	covering := engine.Pred{condEq("staff_id", 1), condGe("created_at", 1700000800)}
+	if _, s := engine.ScanWithICP(tbl, ix, []int64{1, 0}, []int64{2, 0}, covering); s.UsedICP {
 		t.Fatal("UsedICP is set for a predicate this index answers on its own — every condition " +
 			"can be settled on the entry, so no row has to be fetched to decide the query and " +
 			"there is no fetch left for a pushed condition to save")
 	}
 
-	unpushable := Pred{condGe("id", 900)}
-	if _, s := ScanWithICP(tbl, ix, []int64{1, 0}, []int64{2, 0}, unpushable); s.UsedICP {
+	unpushable := engine.Pred{condGe("id", 900)}
+	if _, s := engine.ScanWithICP(tbl, ix, []int64{1, 0}, []int64{2, 0}, unpushable); s.UsedICP {
 		t.Fatal("UsedICP is set for a predicate with no condition on an indexed column — id is " +
 			"not in this index, so an entry has nothing to judge and every row in the range " +
 			"still has to be fetched and tested there")
@@ -107,14 +111,14 @@ func TestICP_NeedsBothATableLookupAndAPushableCond(t *testing.T) {
 // never in the index to begin with.
 func TestICP_ReducesFetchesButNeverEliminatesThem(t *testing.T) {
 	tbl := sampleTable()
-	ix := NewIndex("idx_staff_created", []string{"staff_id", "created_at"}, tbl.Rows)
-	p := Pred{
+	ix := engine.NewIndex("idx_staff_created", []string{"staff_id", "created_at"}, tbl.Rows)
+	p := engine.Pred{
 		condEq("staff_id", 1),
 		condGe("created_at", 1700000800),
 		condGe("id", 900),
 	}
 
-	_, s := ScanWithICP(tbl, ix, []int64{1, 0}, []int64{2, 0}, p)
+	_, s := engine.ScanWithICP(tbl, ix, []int64{1, 0}, []int64{2, 0}, p)
 
 	if s.RowsFetched == 0 {
 		t.Fatal("no row was fetched — but id is not in this index, so the entries that survived " +
@@ -136,15 +140,15 @@ func TestICP_ReducesFetchesButNeverEliminatesThem(t *testing.T) {
 // nothing left for it to reject.
 func TestICP_SavesNothingWhenTheRangeIsAlreadyExact(t *testing.T) {
 	tbl := sampleTable()
-	ix := NewIndex("idx_created", []string{"created_at"}, tbl.Rows)
-	p := Pred{
+	ix := engine.NewIndex("idx_created", []string{"created_at"}, tbl.Rows)
+	p := engine.Pred{
 		condGe("created_at", 1700000500),
 		condLt("created_at", 1700000600),
 		condEq("staff_id", 1),
 	}
 
-	_, withICP := ScanWithICP(tbl, ix, []int64{1700000500}, []int64{1700000600}, p)
-	_, withoutICP := ScanWithoutICP(tbl, ix, []int64{1700000500}, []int64{1700000600}, p)
+	_, withICP := engine.ScanWithICP(tbl, ix, []int64{1700000500}, []int64{1700000600}, p)
+	_, withoutICP := engine.ScanWithoutICP(tbl, ix, []int64{1700000500}, []int64{1700000600}, p)
 
 	if !withICP.UsedICP {
 		t.Fatal("ICP did not engage — created_at is in this index and staff_id is not, so the " +

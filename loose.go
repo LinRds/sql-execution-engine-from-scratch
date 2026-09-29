@@ -1,4 +1,4 @@
-package step4
+package engine
 
 // RangeCond is one condition on a column: Lo <= value <= Hi.
 //
@@ -16,7 +16,7 @@ type RangeCond struct {
 //
 // The predicate filters entries; pass nil to keep everything.
 func TightScan(ix *Index, col string, p Pred) ([]int64, Stats) {
-	panic("not implemented")
+	panic("TightScan is not implemented")
 }
 
 // LooseScan returns the distinct values of col by reading one entry per group
@@ -27,7 +27,7 @@ func TightScan(ix *Index, col string, p Pred) ([]int64, Stats) {
 //
 // It sets UsedLooseScan, which Extra() reports as Using index for group-by.
 func LooseScan(ix *Index, col string, p Pred) ([]int64, Stats) {
-	panic("not implemented")
+	panic("LooseScan is not implemented")
 }
 
 // CanLooseScan reports whether a loose scan over col is allowed.
@@ -35,5 +35,5 @@ func LooseScan(ix *Index, col string, p Pred) ([]int64, Stats) {
 // The index has to carry col, and every condition on a column other than col
 // has to be an equality.
 func CanLooseScan(ix *Index, col string, conds []RangeCond) bool {
-	panic("not implemented")
+	panic("CanLooseScan is not implemented")
 }

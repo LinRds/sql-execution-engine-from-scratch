@@ -1,4 +1,4 @@
-package step6
+package engine
 
 // TableStats is what the optimizer holds about a table: estimates, not facts.
 type TableStats struct {
@@ -10,9 +10,9 @@ type TableStats struct {
 type Plan struct {
 	Name string
 	// Usable reports whether this plan can run at all under the predicate and
-	// the index on offer (F4).
+	// the index on offer.
 	Usable func(p Pred, ix *Index) bool
-	// Est is the plan's cost, estimated from the statistics (F1, F2).
+	// Est is the plan's cost, estimated from the statistics.
 	Est func(st TableStats, ix *Index, p Pred) int
 }
 
@@ -20,5 +20,5 @@ type Plan struct {
 //
 // It returns the zero Plan and false when no plan is usable.
 func ChoosePlan(plans []Plan, p Pred, ix *Index, st TableStats) (Plan, bool) {
-	panic("not implemented")
+	panic("ChoosePlan is not implemented")
 }

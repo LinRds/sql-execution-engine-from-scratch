@@ -1,4 +1,24 @@
-package step5
+package engine
+
+// Cond is one condition: a column has to satisfy a predicate.
+type Cond struct {
+	Col string
+	Ok  func(int64) bool
+}
+
+// Pred is a list of conditions, all of which must hold.
+type Pred []Cond
+
+// Covers reports whether every column the predicate touches is carried by
+// this index. When it is, the predicate can be answered without the row.
+func (ix *Index) Covers(p Pred) bool {
+	for _, c := range p {
+		if ix.ColIndex(c.Col) < 0 {
+			return false
+		}
+	}
+	return true
+}
 
 // eval reports whether a full row satisfies every condition.
 func (p Pred) eval(r Row) bool {

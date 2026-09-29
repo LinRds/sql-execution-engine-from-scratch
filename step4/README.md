@@ -44,13 +44,13 @@ reads, and it is the whole of D4.
 The two scans are the same loop with one line different — how they move to the
 next value. Read them side by side once you have written both.
 
-Set `UsedLooseScan` on the stats so the caller can tell which path ran, and so
-`Extra()` can report `Using index for group-by`.
+Implement them in `loose.go`. Set `UsedLooseScan` on the stats so the caller can
+tell which path ran, and so `Extra()` can report `Using index for group-by`.
 
 ## What you should see
 
 ```bash
-go test ./...
+go test ./step4/
 ```
 
 Five tests. One of them runs both scans over the same data and checks the entry

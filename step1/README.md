@@ -54,13 +54,14 @@ func (ix *Index) Seek(key []int64) int
 func (ix *Index) RangeScan(lo, hi []int64) []Entry
 ```
 
-`NewIndex` and `columnValue` are already written — they build the sorted `Keys` slice
-you will be searching. Read them first: they define the shape you are working with.
+Implement them in `index_ops.go`. `NewIndex` and `columnValue` are already written
+(in `index.go`) — they build the sorted `Keys` slice you will be searching. Read
+them first: they define the shape you are working with.
 
 ## What you should see
 
 ```bash
-go test ./...
+go test ./step1/
 ```
 
-Eight tests, one per concept above. The names read as this step's table of contents.
+Seven tests, one per concept above. The names read as this step's table of contents.

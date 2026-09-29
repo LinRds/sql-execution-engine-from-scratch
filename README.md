@@ -11,8 +11,12 @@ This lab implements the mechanisms that decide **how a SQL query reads its data*
 small enough to finish in an evening, faithful enough that the numbers match what
 real `EXPLAIN` tells you.
 
-Every step leaves the core functions empty. Read that step's `README.md` for the
-contract, fill them in until the tests pass, and move on.
+The engine is one package at the repository root. Each step is a directory holding
+its `README.md` and the tests for the capability it adds — the tests are the spec,
+and the code they exercise lives in the root package.
+
+Each step leaves its functions empty, so its tests fail until you write them. Read
+that step's `README.md` for the contract, fill in the bodies, and move on.
 
 ## The steps
 
@@ -25,9 +29,8 @@ contract, fill them in until the tests pass, and move on.
 | [5](step5/) | **Push down** | When does filtering happen before the row is fetched? |
 | [6](step6/) | **Choose a plan** | How does the optimizer pick, and why does it sometimes pick wrong? |
 
-Each step is the previous one plus a single new capability, so the engine grows
-with you. Steps share a base of `index.go`, `pred.go` and `scan.go`; each step adds
-one file.
+Steps 3 to 6 each add an independent capability on top of the same engine; they
+are siblings, not a chain. Only step 1 is a prerequisite for all of them.
 
 ## Concepts covered
 
@@ -37,15 +40,35 @@ table lookup · `Using index` · `Using index condition` · index condition push
 `Using index for group-by` · cardinality · row width · cost model ·
 optimizer statistics · plan selection
 
+## Layout
+
+```
+├── index.go        Row, Entry, Index, NewIndex, columnValue, ColIndex
+├── table.go        Table
+├── pred.go         Cond, Pred, Covers, eval, evalEntry
+├── stats.go        Stats, Cost, FetchCost, ScanCost
+│
+├── index_ops.go    CompareKeys, Seek, RangeScan          ← step 1
+├── scan.go         FullScan, IndexScan, CoveringScan, Extra   ← step 2
+├── distinct.go     DistinctOrdered, DistinctTempTable    ← step 3
+├── loose.go        RangeCond, TightScan, LooseScan, CanLooseScan  ← step 4
+├── icp.go          ScanWithICP, ScanWithoutICP           ← step 5
+├── plan.go         TableStats, Plan, ChoosePlan          ← step 6
+│
+├── step1/ … step6/ one README and one test file each
+```
+
+The first four files are written. Everything below them is yours.
+
 ## Running
 
 ```bash
-cd step1
-go test ./...
+go test ./step1/     # one step
+go test ./...        # everything
 ```
 
-Every step is self-contained — `go test` in its directory is the whole workflow.
-All green means that step is done.
+Every step is a separate test package, so you can run them one at a time. All green
+means that step is done.
 
 ## Reading the tests
 

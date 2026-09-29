@@ -37,13 +37,13 @@ func DistinctTempTable(ix *Index, col string, p Pred) ([]int64, Stats)
 The two functions are the same loop with one line different — that difference is
 the entire concept. Read them side by side once you have written both.
 
-Set `UsedTempTable` on the stats so the caller can tell which path ran, and so
-`Extra()` can report `Using temporary`.
+Implement them in `distinct.go`. Set `UsedTempTable` on the stats so the caller can
+tell which path ran, and so `Extra()` can report `Using temporary`.
 
 ## What you should see
 
 ```bash
-go test ./...
+go test ./step3/
 ```
 
 Five tests. The last one runs both paths over the same data and checks they

@@ -41,15 +41,15 @@ rows to get them.
 func ChoosePlan(plans []Plan, p Pred, ix *Index, st TableStats) (Plan, bool)
 ```
 
-Each `Plan` carries its own `Usable` precondition and its own `Est`. `ChoosePlan`
-drops the candidates whose precondition fails and returns the cheapest of what is
-left. When nothing is left it returns the zero `Plan` and `false` — an empty
-candidate set is a real answer, not an error to hide.
+Implement it in `plan.go`. Each `Plan` carries its own `Usable` precondition and
+its own `Est`. `ChoosePlan` drops the candidates whose precondition fails and
+returns the cheapest of what is left. When nothing is left it returns the zero
+`Plan` and `false` — an empty candidate set is a real answer, not an error to hide.
 
 ## What you should see
 
 ```bash
-go test ./...
+go test ./step6/
 ```
 
 Five tests. Each one hands the engine plans and statistics and checks which plan

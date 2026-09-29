@@ -1,6 +1,10 @@
 package step1
 
-import "testing"
+import (
+	"testing"
+
+	"sql-execution-engine-from-scratch"
+)
 
 // sampleRows builds 1000 rows with two different cardinalities on purpose:
 //
@@ -8,10 +12,10 @@ import "testing"
 //   - staff_id has two values, 500 each -> a Seek on it leaves a tail of 500
 //
 // Every concept in this step is easier to see against that contrast.
-func sampleRows() []Row {
-	rows := make([]Row, 0, 1000)
+func sampleRows() []engine.Row {
+	rows := make([]engine.Row, 0, 1000)
 	for i := 0; i < 1000; i++ {
-		rows = append(rows, Row{
+		rows = append(rows, engine.Row{
 			ID:        int64(i + 1),
 			StaffID:   int64(i%2 + 1),
 			CreatedAt: 1700000000 + int64(i),
@@ -44,10 +48,10 @@ func TestCompareKeys_CompositeOrdersByFirstThenSecond(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := sign(CompareKeys(c.a, c.b)); got != c.want {
+			if got := sign(engine.CompareKeys(c.a, c.b)); got != c.want {
 				t.Fatalf("CompareKeys(%v, %v) = %d, want sign %d", c.a, c.b, got, c.want)
 			}
-			if got := sign(CompareKeys(c.b, c.a)); got != -c.want {
+			if got := sign(engine.CompareKeys(c.b, c.a)); got != -c.want {
 				t.Fatalf("CompareKeys(%v, %v) = %d but CompareKeys(%v, %v) = %d — comparison must be antisymmetric",
 					c.a, c.b, c.want, c.b, c.a, got)
 			}
@@ -58,7 +62,7 @@ func TestCompareKeys_CompositeOrdersByFirstThenSecond(t *testing.T) {
 // A2: Seek finds the first entry >= key. Both cases matter — the key exists,
 // and the key is past the end. A range scan needs the second one as its stop.
 func TestSeek_ReturnsFirstEntryNotLessThanKey(t *testing.T) {
-	ix := NewIndex("idx_staff_created", []string{"staff_id", "created_at"}, sampleRows())
+	ix := engine.NewIndex("idx_staff_created", []string{"staff_id", "created_at"}, sampleRows())
 
 	t.Run("finds an existing key", func(t *testing.T) {
 		want := []int64{2, 0}
@@ -67,11 +71,11 @@ func TestSeek_ReturnsFirstEntryNotLessThanKey(t *testing.T) {
 			t.Fatalf("Seek(%v) = %d, past the end of a %d-entry index — staff_id 2 is in half the rows",
 				want, i, len(ix.Keys))
 		}
-		if CompareKeys(ix.Keys[i].Key, want) < 0 {
+		if engine.CompareKeys(ix.Keys[i].Key, want) < 0 {
 			t.Fatalf("Seek(%v) landed on %v, which is smaller than the key it was looking for",
 				want, ix.Keys[i].Key)
 		}
-		if i > 0 && CompareKeys(ix.Keys[i-1].Key, want) >= 0 {
+		if i > 0 && engine.CompareKeys(ix.Keys[i-1].Key, want) >= 0 {
 			t.Fatalf("Seek(%v) = %d, but entry %d is %v — that one is already >= the key, so %d is not the first",
 				want, i, i-1, ix.Keys[i-1].Key, i)
 		}
@@ -88,7 +92,7 @@ func TestSeek_ReturnsFirstEntryNotLessThanKey(t *testing.T) {
 
 // A3: a range scan is Seek(lo) plus reading forward until hi. No per-entry search.
 func TestRangeScan_StopsAtTheUpperBound(t *testing.T) {
-	ix := NewIndex("idx_staff_created", []string{"staff_id", "created_at"}, sampleRows())
+	ix := engine.NewIndex("idx_staff_created", []string{"staff_id", "created_at"}, sampleRows())
 
 	lo, hi := []int64{1, 0}, []int64{2, 0}
 	got := ix.RangeScan(lo, hi)
@@ -98,7 +102,7 @@ func TestRangeScan_StopsAtTheUpperBound(t *testing.T) {
 			lo, hi, len(got))
 	}
 	for n, e := range got {
-		if CompareKeys(e.Key, lo) < 0 || CompareKeys(e.Key, hi) >= 0 {
+		if engine.CompareKeys(e.Key, lo) < 0 || engine.CompareKeys(e.Key, hi) >= 0 {
 			t.Fatalf("entry %d is %v, outside [%v, %v)", n, e.Key, lo, hi)
 		}
 	}
@@ -108,9 +112,9 @@ func TestRangeScan_StopsAtTheUpperBound(t *testing.T) {
 // Without it, an index could never return anything but its own columns.
 func TestEntry_CarriesRowIDForLaterLookup(t *testing.T) {
 	rows := sampleRows()
-	ix := NewIndex("idx_staff_created", []string{"staff_id", "created_at"}, rows)
+	ix := engine.NewIndex("idx_staff_created", []string{"staff_id", "created_at"}, rows)
 
-	byID := make(map[int64]Row, len(rows))
+	byID := make(map[int64]engine.Row, len(rows))
 	for _, r := range rows {
 		byID[r.ID] = r
 	}
@@ -130,7 +134,7 @@ func TestEntry_CarriesRowIDForLaterLookup(t *testing.T) {
 // A5: leftmost prefix. Equality on the first column is one contiguous range,
 // so a single Seek plus a forward scan covers every matching entry.
 func TestLeftmostPrefix_EqualityOnFirstColCoversOneContiguousRange(t *testing.T) {
-	ix := NewIndex("idx_staff_created", []string{"staff_id", "created_at"}, sampleRows())
+	ix := engine.NewIndex("idx_staff_created", []string{"staff_id", "created_at"}, sampleRows())
 
 	got := ix.RangeScan([]int64{1, 0}, []int64{2, 0})
 
@@ -149,8 +153,8 @@ func TestLeftmostPrefix_EqualityOnFirstColCoversOneContiguousRange(t *testing.T)
 // and trails another, and only the leading position can be jumped to.
 func TestLeftmostPrefix_ColumnOrderDecidesWhatCanBeLocated(t *testing.T) {
 	rows := sampleRows()
-	byStaff := NewIndex("idx_staff_created", []string{"staff_id", "created_at"}, rows)
-	byCreated := NewIndex("idx_created_staff", []string{"created_at", "staff_id"}, rows)
+	byStaff := engine.NewIndex("idx_staff_created", []string{"staff_id", "created_at"}, rows)
+	byCreated := engine.NewIndex("idx_created_staff", []string{"created_at", "staff_id"}, rows)
 
 	if !columnGroupsAreContiguous(byStaff, 0) {
 		t.Fatal("in (staff_id, created_at), all staff_id 1 entries should form one run — staff_id leads this index")
@@ -165,8 +169,8 @@ func TestLeftmostPrefix_ColumnOrderDecidesWhatCanBeLocated(t *testing.T) {
 // that point depends on how many times the key repeats.
 func TestSeek_DoesNotGuaranteeAShortTail(t *testing.T) {
 	rows := sampleRows()
-	unique := NewIndex("idx_id", []string{"id"}, rows)
-	twoValued := NewIndex("idx_staff", []string{"staff_id"}, rows)
+	unique := engine.NewIndex("idx_id", []string{"id"}, rows)
+	twoValued := engine.NewIndex("idx_staff", []string{"staff_id"}, rows)
 
 	if n := runLength(unique, unique.Seek([]int64{500})); n != 1 {
 		t.Fatalf("on a unique column, the tail after Seek is %d entries, want 1", n)
@@ -180,7 +184,7 @@ func TestSeek_DoesNotGuaranteeAShortTail(t *testing.T) {
 // columnGroupsAreContiguous reports whether entries sharing a value in the given
 // column position form one unbroken run. A value that reappears after another
 // value has been seen means the groups are scattered.
-func columnGroupsAreContiguous(ix *Index, col int) bool {
+func columnGroupsAreContiguous(ix *engine.Index, col int) bool {
 	seen := make(map[int64]bool)
 	var prev int64
 	started := false
@@ -200,7 +204,7 @@ func columnGroupsAreContiguous(ix *Index, col int) bool {
 
 // runLength counts how many consecutive entries share the first key element with
 // the entry at index from.
-func runLength(ix *Index, from int) int {
+func runLength(ix *engine.Index, from int) int {
 	if from >= len(ix.Keys) {
 		return 0
 	}

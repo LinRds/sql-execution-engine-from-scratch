@@ -46,13 +46,14 @@ whose entry survived are fetched, and the second part is judged there. Hand the
 first part to `p.evalEntry` — a `Pred` holding a condition on a column the index
 lacks answers false for every entry, so the split is what makes it usable.
 
-Set `UsedICP` on the stats when there is a condition worth pushing *and* a row
-still worth fetching, so `Extra()` can report `Using index condition`.
+Implement them in `icp.go`. Set `UsedICP` on the stats when there is a condition
+worth pushing *and* a row still worth fetching, so `Extra()` can report
+`Using index condition`.
 
 ## What you should see
 
 ```bash
-go test ./...
+go test ./step5/
 ```
 
 Five tests. E3 checks both halves of the prerequisite, and E5 checks that a

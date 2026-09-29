@@ -1,4 +1,4 @@
-package step3
+package engine
 
 // DistinctOrdered deduplicates a column that leads the index.
 //
@@ -7,7 +7,7 @@ package step3
 //
 // The predicate filters entries; pass nil to keep everything.
 func DistinctOrdered(ix *Index, col string, p Pred) ([]int64, Stats) {
-	panic("not implemented")
+	panic("DistinctOrdered is not implemented")
 }
 
 // DistinctTempTable deduplicates a column that does not lead the index.
@@ -17,5 +17,5 @@ func DistinctOrdered(ix *Index, col string, p Pred) ([]int64, Stats) {
 //
 // The predicate filters entries; pass nil to keep everything.
 func DistinctTempTable(ix *Index, col string, p Pred) ([]int64, Stats) {
-	panic("not implemented")
+	panic("DistinctTempTable is not implemented")
 }
