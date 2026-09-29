@@ -214,3 +214,49 @@ func runLength(ix *engine.Index, from int) int {
 	}
 	return n
 }
+
+// A8: SeekPrefixLast finds the end of a run. It is what a scan uses to leave a
+// whole group behind in one lookup — asking for the first key greater than the
+// group's value does not work, because every entry in the group already sorts
+// after that value once the key has more columns.
+func TestSeekPrefixLast_FindsTheEndOfARun(t *testing.T) {
+	ix := engine.NewIndex("idx_staff_created", []string{"staff_id", "created_at"}, sampleRows())
+
+	last := ix.SeekPrefixLast([]int64{1})
+	if last != 499 {
+		t.Fatalf("SeekPrefixLast([1]) = %d, want 499 — staff_id 1 owns the first half of the index",
+			last)
+	}
+	if ix.Keys[last].Key[0] != 1 {
+		t.Fatalf("entry %d is %v, which does not start with staff_id 1", last, ix.Keys[last].Key)
+	}
+	if last+1 < len(ix.Keys) && ix.Keys[last+1].Key[0] == 1 {
+		t.Fatalf("entry %d is %v — the run was supposed to end at %d",
+			last+1, ix.Keys[last+1].Key, last)
+	}
+	if got := ix.SeekPrefixLast([]int64{3}); got != -1 {
+		t.Fatalf("SeekPrefixLast([3]) = %d, want -1 — no entry has staff_id 3", got)
+	}
+}
+
+// A8: the run can sit anywhere. A lookup that leans on the run touching one end
+// of the index works for the values at the ends and fails for the ones between.
+func TestSeekPrefixLast_HandlesARunInTheMiddle(t *testing.T) {
+	rows := make([]engine.Row, 0, 300)
+	for i := range 300 {
+		rows = append(rows, engine.Row{
+			ID:        int64(i + 1),
+			StaffID:   int64(i/100 + 1),
+			CreatedAt: 1700000000 + int64(i),
+		})
+	}
+	ix := engine.NewIndex("idx_staff_created", []string{"staff_id", "created_at"}, rows)
+
+	if got := ix.SeekPrefixLast([]int64{2}); got != 199 {
+		t.Fatalf("SeekPrefixLast([2]) = %d, want 199 — staff_id 2 owns entries 100..199, with "+
+			"other values on both sides of it", got)
+	}
+	if got := ix.SeekPrefixLast([]int64{3}); got != 299 {
+		t.Fatalf("SeekPrefixLast([3]) = %d, want 299 — this run reaches the end of the index", got)
+	}
+}

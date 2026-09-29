@@ -77,5 +77,8 @@ func (s Stats) Extra() string {
 	if s.RowsFetched+s.RowsScanned == 0 {
 		used = append(used, "Using index")
 	}
+	if s.UsedLooseScan {
+		used = append(used, "Using index for group-by")
+	}
 	return strings.Join(used, ";")
 }

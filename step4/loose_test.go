@@ -12,7 +12,7 @@ import (
 // id and created_at are unique.
 func sampleTable() *engine.Table {
 	rows := make([]engine.Row, 0, 1000)
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		rows = append(rows, engine.Row{
 			ID:        int64(i + 1),
 			StaffID:   int64(i%2 + 1),
@@ -26,17 +26,13 @@ func sampleTable() *engine.Table {
 	return t
 }
 
-func condEq(col string, v int64) engine.Cond {
-	return engine.Cond{Col: col, Ok: func(x int64) bool { return x == v }}
-}
-
 // D1: a tight scan only learns that a group has ended by reaching an entry with
 // a different value, so it walks the whole group. A loose scan has the group's
 // value already and can leave the rest of the group unread.
 func TestLooseScan_SkipsWholeGroupsInsteadOfWalkingThem(t *testing.T) {
 	tbl := sampleTable()
 	ix := engine.NewIndex("idx_staff_created", []string{"staff_id", "created_at"}, tbl.Rows)
-	filter := engine.Pred{condEq("staff_id", 2)}
+	filter := []engine.RangeCond{{Col: "staff_id", Lo: 2, Hi: 2}}
 
 	tight, tightStats := engine.TightScan(ix, "staff_id", filter)
 	loose, looseStats := engine.LooseScan(ix, "staff_id", filter)
@@ -62,7 +58,7 @@ func TestLooseScan_SkipsWholeGroupsInsteadOfWalkingThem(t *testing.T) {
 // first entry past the group, however far away the next value happens to be.
 func TestLooseScan_SeeksToTheNextValue(t *testing.T) {
 	rows := make([]engine.Row, 0, 1000)
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		staff := int64(1)
 		if i >= 500 {
 			staff = 1000000
@@ -159,5 +155,94 @@ func TestExtra_SaysUsingIndexForGroupBy(t *testing.T) {
 	if strings.Contains(tightStats.Extra(), "Using index for group-by") {
 		t.Fatalf("Extra() = %q — a tight scan walks every entry, so it must not claim the group-by "+
 			"shortcut", tightStats.Extra())
+	}
+}
+
+// D4: a condition on another column is folded into the seek, so a group whose
+// entries never satisfy it is skipped instead of reported.
+func TestLooseScan_SkipsGroupsTheOtherConditionsExclude(t *testing.T) {
+	tbl := sampleTable()
+	ix := engine.NewIndex("idx_staff_created", []string{"staff_id", "created_at"}, tbl.Rows)
+
+	// staff_id 1 owns the even created_at values, staff_id 2 the odd ones.
+	odd := []engine.RangeCond{
+		{Col: "staff_id", Lo: 1, Hi: 2},
+		{Col: "created_at", Lo: 1700000501, Hi: 1700000501},
+	}
+	if got, _ := engine.LooseScan(ix, "staff_id", odd); !reflect.DeepEqual(got, []int64{2}) {
+		t.Fatalf("got %v for created_at = 1700000501, want [2] — only staff_id 2 has a row with "+
+			"that value, and the scan has to land on it rather than on the group's first entry", got)
+	}
+
+	even := []engine.RangeCond{
+		{Col: "staff_id", Lo: 1, Hi: 2},
+		{Col: "created_at", Lo: 1700000500, Hi: 1700000500},
+	}
+	if got, _ := engine.LooseScan(ix, "staff_id", even); !reflect.DeepEqual(got, []int64{1}) {
+		t.Fatalf("got %v for created_at = 1700000500, want [1] — only staff_id 1 has a row with "+
+			"that value", got)
+	}
+}
+
+// D6: the grouped column has to lead the index. The jump to the next group is
+// a seek on that column's next value, and a column that does not start the
+// index has no such seek — its groups are scattered.
+func TestLooseScan_RefusesANonLeadingColumn(t *testing.T) {
+	tbl := sampleTable()
+	trailing := engine.NewIndex("idx_created_staff", []string{"created_at", "staff_id"}, tbl.Rows)
+
+	if engine.CanLooseScan(trailing, "staff_id", nil) {
+		t.Fatal("staff_id trails created_at in this index — its groups are scattered, so there " +
+			"is no single seek that lands on the next one")
+	}
+}
+
+// D4: a range on the grouped column narrows the walk — the scan starts at the
+// lower bound and stops at the upper one.
+func TestLooseScan_HonoursTheGroupedColumnsRange(t *testing.T) {
+	tbl := sampleTable()
+	ix := engine.NewIndex("idx_staff_created", []string{"staff_id", "created_at"}, tbl.Rows)
+
+	only, _ := engine.LooseScan(ix, "staff_id", []engine.RangeCond{{Col: "staff_id", Lo: 1, Hi: 1}})
+	if !reflect.DeepEqual(only, []int64{1}) {
+		t.Fatalf("got %v for staff_id in [1,1], want [1] — the scan stops at the range's upper "+
+			"bound instead of running to the end of the index", only)
+	}
+
+	both, _ := engine.LooseScan(ix, "staff_id", []engine.RangeCond{{Col: "staff_id", Lo: 1, Hi: 2}})
+	if !reflect.DeepEqual(both, []int64{1, 2}) {
+		t.Fatalf("got %v for staff_id in [1,2], want [1 2] — the scan starts at the range's lower "+
+			"bound, not at its upper one", both)
+	}
+}
+
+// D4: the conditions belong to the caller. Folding them into a seek means
+// reading them, not rewriting them.
+func TestLooseScan_LeavesTheConditionsAlone(t *testing.T) {
+	tbl := sampleTable()
+	ix := engine.NewIndex("idx_staff_created", []string{"staff_id", "created_at"}, tbl.Rows)
+	conds := []engine.RangeCond{
+		{Col: "created_at", Lo: 1700000500, Hi: 1700000500},
+		{Col: "staff_id", Lo: 1, Hi: 1},
+	}
+
+	engine.LooseScan(ix, "staff_id", conds)
+
+	if conds[0].Col != "created_at" || conds[1].Col != "staff_id" {
+		t.Fatalf("the caller's conditions came back as [%s, %s] — the scan reads them to build a "+
+			"seek, it does not get to rewrite them", conds[0].Col, conds[1].Col)
+	}
+}
+
+// D4: a condition on a column the index does not carry is worse than a range —
+// there is nothing to fold it into, and nothing to look at either.
+func TestLooseScan_RefusesAColumnTheIndexDoesNotCarry(t *testing.T) {
+	tbl := sampleTable()
+	ix := engine.NewIndex("idx_staff_created", []string{"staff_id", "created_at"}, tbl.Rows)
+
+	offIndex := []engine.RangeCond{{Col: "id", Lo: 1, Hi: 1}}
+	if engine.CanLooseScan(ix, "staff_id", offIndex) {
+		t.Fatal("an equality on id allowed a loose scan — id is not in this index, so the scan " +
+			"can neither fold the condition into a seek nor look at the entries it skipped")
 	}
 }

@@ -39,6 +39,13 @@ cannot use the second.
 repeated values the key has. A unique column leaves a tail of one; a two-valued column
 leaves half the index.
 
+**A8 — `SeekPrefixLast` finds the end of a run.**
+`Seek` stops at the first key `>= key`; this one stops at the last key that starts
+with a given prefix. It is what a scan uses to leave a whole group behind in one
+lookup. Asking for the first key *greater* than the group's value does not do it:
+once the key has more columns, every entry in the group already sorts after that
+value, so the lookup lands back inside the group it was meant to leave.
+
 ## What to implement
 
 ```go
@@ -54,9 +61,9 @@ func (ix *Index) Seek(key []int64) int
 func (ix *Index) RangeScan(lo, hi []int64) []Entry
 ```
 
-Implement them in `index_ops.go`. `NewIndex` and `columnValue` are already written
-(in `index.go`) — they build the sorted `Keys` slice you will be searching. Read
-them first: they define the shape you are working with.
+Implement them in `index_ops.go`. `NewIndex`, `columnValue` and `SeekPrefixLast`
+are already written — the first two in `index.go`, the third in `index_ops.go`.
+Read them first: they define the shape you are working with.
 
 ## What you should see
 
@@ -64,4 +71,4 @@ them first: they define the shape you are working with.
 go test ./step1/
 ```
 
-Seven tests, one per concept above. The names read as this step's table of contents.
+Nine tests, one per concept above. The names read as this step's table of contents.
