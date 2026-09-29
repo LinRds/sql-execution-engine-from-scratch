@@ -54,20 +54,3 @@ func (p Pred) evalEntry(ix *Index, e Entry) bool {
 	}
 	return true
 }
-
-func (p Pred) evalICP(ix *Index, e Entry) bool {
-	for _, c := range p {
-		if c.Col == "id" {
-			if !c.Ok(e.RowID) {
-				return false
-			}
-			continue
-		}
-		if idx := ix.ColIndex(c.Col); idx >= 0 {
-			if !c.Ok(e.Key[idx]) {
-				return false
-			}
-		}
-	}
-	return true
-}

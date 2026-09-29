@@ -16,23 +16,23 @@ func ScanWithoutICP(t *Table, ix *Index, lo, hi []int64, p Pred) ([]Row, Stats) 
 // so a surviving entry is a candidate, not a result. UsedICP is set when both
 // parts are present: a condition worth pushing, and a row still worth fetching.
 func ScanWithICP(t *Table, ix *Index, lo, hi []int64, p Pred) ([]Row, Stats) {
-	canUseICP := canUseICP(ix, p)
-	if !canUseICP {
+	onEntry, onRow := splitPred(ix, p)
+	if len(onEntry) == 0 || len(onRow) == 0 {
 		return ScanWithoutICP(t, ix, lo, hi, p)
 	}
 	inRange := ix.RangeScan(lo, hi)
 	stats := Stats{
 		IndexEntriesRead: len(inRange),
-		UsedICP:          canUseICP,
+		UsedICP:          true,
 	}
 	filtered := make([]Row, 0)
 	for _, in := range inRange {
-		if !p.evalICP(ix, in) {
+		if !onEntry.evalEntry(ix, in) {
 			continue
 		}
 		row := t.ByID[in.RowID]
 		stats.RowsFetched++
-		if p.eval(row) {
+		if onRow.eval(row) {
 			filtered = append(filtered, row)
 			stats.RowsReturned++
 		}
@@ -40,16 +40,13 @@ func ScanWithICP(t *Table, ix *Index, lo, hi []int64, p Pred) ([]Row, Stats) {
 	return filtered, stats
 }
 
-func canUseICP(ix *Index, p Pred) bool {
-	needback := false
-	canFilter := false
+func splitPred(ix *Index, p Pred) (onEntry, onRow Pred) {
 	for _, c := range p {
-		idx := ix.ColIndex(c.Col)
-		if idx < 0 && c.Col != "id" {
-			needback = true
+		if c.Col == "id" || ix.ColIndex(c.Col) >= 0 {
+			onEntry = append(onEntry, c)
 		} else {
-			canFilter = true
+			onRow = append(onRow, c)
 		}
 	}
-	return needback && canFilter
+	return onEntry, onRow
 }
