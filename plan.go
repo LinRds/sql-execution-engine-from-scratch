@@ -1,5 +1,7 @@
 package engine
 
+import "math"
+
 // TableStats is what the optimizer holds about a table: estimates, not facts.
 type TableStats struct {
 	Rows   int // estimated row count
@@ -20,5 +22,20 @@ type Plan struct {
 //
 // It returns the zero Plan and false when no plan is usable.
 func ChoosePlan(plans []Plan, p Pred, ix *Index, st TableStats) (Plan, bool) {
-	panic("ChoosePlan is not implemented")
+	cost := math.MaxInt
+	var bestPlan *Plan
+	for _, plan := range plans {
+		if !plan.Usable(p, ix) {
+			continue
+		}
+		curCost := plan.Est(st, ix, p)
+		if curCost < cost {
+			bestPlan = &plan
+			cost = curCost
+		}
+	}
+	if bestPlan != nil {
+		return *bestPlan, true
+	}
+	return Plan{}, false
 }

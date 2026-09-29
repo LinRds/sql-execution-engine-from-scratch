@@ -25,9 +25,8 @@ function of that number and of nothing else.
 
 **F4 — A plan that cannot run never becomes a candidate.**
 Covering scan needs every column the predicate touches to be carried by the
-index. Loose scan needs every condition outside the grouping column to be an
-equality. A plan that fails its precondition is not ranked last — it is not
-there, however cheap it claims to be.
+index. A plan that fails its precondition is not ranked last — it is not there,
+however cheap it claims to be.
 
 **F5 — Stale statistics pick the wrong plan, and nothing notices.**
 The estimate is only as good as the statistics behind it. When they say a column
