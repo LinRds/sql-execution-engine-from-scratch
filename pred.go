@@ -10,7 +10,8 @@ type Cond struct {
 type Pred []Cond
 
 // Covers reports whether every column the predicate touches is carried by
-// this index. When it is, the predicate can be answered without the row.
+// this index — that is, whether the predicate can be judged from an entry
+// instead of from the row.
 func (ix *Index) Covers(p Pred) bool {
 	for _, c := range p {
 		if ix.ColIndex(c.Col) < 0 {

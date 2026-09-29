@@ -4,7 +4,16 @@ package engine
 // accepts. No index is involved, so every condition is checked against the
 // full row.
 func FullScan(t *Table, p Pred) ([]Row, Stats) {
-	panic("FullScan is not implemented")
+	filtered := make([]Row, 0)
+	stats := Stats{}
+	for _, row := range t.Rows {
+		stats.RowsScanned++
+		if p.eval(row) {
+			filtered = append(filtered, row)
+			stats.RowsReturned++
+		}
+	}
+	return filtered, stats
 }
 
 // IndexScan walks the entries in [lo, hi), fetching the full row for each
@@ -13,22 +22,54 @@ func FullScan(t *Table, p Pred) ([]Row, Stats) {
 // The index narrows which rows are worth looking at, but the answer still
 // has to come from the row — so every entry in the range costs a fetch.
 func IndexScan(t *Table, ix *Index, lo, hi []int64, p Pred) ([]Row, Stats) {
-	panic("IndexScan is not implemented")
+	inRange := ix.RangeScan(lo, hi)
+	stats := Stats{
+		IndexEntriesRead: len(inRange),
+	}
+	filtered := make([]Row, 0)
+	for _, in := range inRange {
+		row := t.ByID[in.RowID]
+		stats.RowsFetched++
+		if p.eval(row) {
+			filtered = append(filtered, row)
+			stats.RowsReturned++
+		}
+	}
+	return filtered, stats
 }
 
 // CoveringScan answers the predicate from the index entries alone, without
 // ever reading a row.
 //
-// It is only correct when the index carries every column the predicate
-// touches — checking that is the caller's job, via ix.Covers.
+// It assumes the caller has already established that the index can serve the
+// query: that it carries every column the predicate touches, and every column
+// of the row this scan hands back. Choosing this path is the optimizer's job;
+// by the time a scan runs, the choice is made.
 func CoveringScan(t *Table, ix *Index, lo, hi []int64, p Pred) ([]Row, Stats) {
-	panic("CoveringScan is not implemented")
+	if !ix.Covers(p) {
+		return IndexScan(t, ix, lo, hi, p)
+	}
+	inRange := ix.RangeScan(lo, hi)
+	filtered := make([]Row, 0)
+	stats := Stats{}
+	for _, in := range inRange {
+		stats.IndexEntriesRead++
+		if p.evalEntry(ix, in) {
+			stats.RowsReturned++
+			filtered = append(filtered, in.ToRow(ix))
+		}
+	}
+	return filtered, stats
 }
 
 // Extra renders the EXPLAIN Extra column for this execution.
 //
-// Report "Using index" exactly when no row was fetched — that flag means
-// the index alone answered the query, not merely that an index was used.
+// Report "Using index" only when an index was walked and no row was fetched.
+// Both halves matter: an index scan that still read every row is not covered,
+// and neither is a full scan — it fetches nothing because it uses no index.
 func (s Stats) Extra() string {
-	panic("Extra is not implemented")
+	if s.RowsFetched+s.RowsScanned == 0 {
+		return "Using index"
+	}
+	return ""
 }

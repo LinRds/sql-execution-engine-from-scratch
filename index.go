@@ -19,6 +19,20 @@ type Entry struct {
 	RowID int64
 }
 
+func (e Entry) ToRow(ix *Index) Row {
+	if ix == nil {
+		return Row{}
+	}
+	row := Row{ID: e.RowID}
+	if idx := ix.ColIndex("staff_id"); idx != -1 {
+		row.StaffID = e.Key[idx]
+	}
+	if idx := ix.ColIndex("created_at"); idx != -1 {
+		row.CreatedAt = e.Key[idx]
+	}
+	return row
+}
+
 // Index is a sorted index over a set of rows.
 //
 // Keys is sorted by Key, using the column order declared in Cols.
