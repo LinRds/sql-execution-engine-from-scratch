@@ -2,7 +2,7 @@ package step3
 
 import (
 	"reflect"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 
@@ -13,7 +13,7 @@ import (
 // id and created_at are unique.
 func sampleTable() *engine.Table {
 	rows := make([]engine.Row, 0, 1000)
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		rows = append(rows, engine.Row{
 			ID:        int64(i + 1),
 			StaffID:   int64(i%2 + 1),
@@ -60,7 +60,7 @@ func TestDistinctTempTable_RemembersEveryValueItHasSeen(t *testing.T) {
 		t.Fatal("no temporary table was used — but staff_id trails this index, so equal values " +
 			"are scattered and nothing short of remembering them all can work")
 	}
-	sort.Slice(got, func(i, j int) bool { return got[i] < got[j] })
+	slices.Sort(got)
 	if !reflect.DeepEqual(got, []int64{1, 2}) {
 		t.Fatalf("got %v, want [1 2] — staff_id has exactly two values", got)
 	}
@@ -83,16 +83,22 @@ func TestDistinct_LeadingColumnIsOrderedTrailingIsNot(t *testing.T) {
 }
 
 // C4: Using temporary is EXPLAIN's way of saying "the data was not in the
-// order this step needed".
+// order this step needed". Both flags belong on this query: the dedup needed
+// scratch space, and it never left the index to get it.
 func TestExtra_SaysUsingTemporaryWhenTheDataIsOutOfOrder(t *testing.T) {
 	tbl := sampleTable()
 	trailing := engine.NewIndex("idx_created_staff", []string{"created_at", "staff_id"}, tbl.Rows)
 
 	_, s := engine.DistinctTempTable(trailing, "staff_id", nil)
+	got := s.Extra()
 
-	if got := s.Extra(); !strings.Contains(got, "Using temporary") {
+	if !strings.Contains(got, "Using temporary") {
 		t.Fatalf("Extra() = %q, want it to mention Using temporary — the dedup needed "+
 			"scratch space because the index order did not match the dedup order", got)
+	}
+	if !strings.Contains(got, "Using index") {
+		t.Fatalf("Extra() = %q, want it to mention Using index as well — the whole dedup ran "+
+			"on the entries and never read a row", got)
 	}
 }
 
@@ -105,12 +111,28 @@ func TestDistinct_BothPathsReturnTheSameValues(t *testing.T) {
 	ordered, _ := engine.DistinctOrdered(leading, "staff_id", nil)
 	temped, _ := engine.DistinctTempTable(trailing, "staff_id", nil)
 
-	sort.Slice(ordered, func(i, j int) bool { return ordered[i] < ordered[j] })
-	sort.Slice(temped, func(i, j int) bool { return temped[i] < temped[j] })
+	slices.Sort(ordered)
+	slices.Sort(temped)
 
 	if !reflect.DeepEqual(ordered, temped) {
 		t.Fatalf("ordered path returned %v and temp-table path returned %v — "+
 			"they must agree, they answer the same question", ordered, temped)
+	}
+}
+
+// C5: the cheaper path is the one that never built a table.
+func TestDistinct_TheTempTablePathCostsMore(t *testing.T) {
+	tbl := sampleTable()
+	leading := engine.NewIndex("idx_staff_created", []string{"staff_id", "created_at"}, tbl.Rows)
+	trailing := engine.NewIndex("idx_created_staff", []string{"created_at", "staff_id"}, tbl.Rows)
+
+	_, ordered := engine.DistinctOrdered(leading, "staff_id", nil)
+	_, temped := engine.DistinctTempTable(trailing, "staff_id", nil)
+
+	if temped.Cost() <= ordered.Cost() {
+		t.Fatalf("temp-table path cost %d and the ordered path cost %d — the temp table is "+
+			"work the ordered path never does, so it cannot come out even",
+			temped.Cost(), ordered.Cost())
 	}
 }
 

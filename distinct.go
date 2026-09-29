@@ -7,7 +7,24 @@ package engine
 //
 // The predicate filters entries; pass nil to keep everything.
 func DistinctOrdered(ix *Index, col string, p Pred) ([]int64, Stats) {
-	panic("DistinctOrdered is not implemented")
+	stats := Stats{}
+	idx := ix.ColIndex(col)
+	if idx == -1 {
+		return nil, stats
+	}
+	filtered := make([]int64, 0)
+	for _, entry := range ix.Keys {
+		stats.IndexEntriesRead++
+		if !p.evalEntry(ix, entry) {
+			continue
+		}
+		if len(filtered) > 0 && filtered[len(filtered)-1] == entry.Key[idx] {
+			continue
+		}
+		stats.RowsReturned++
+		filtered = append(filtered, entry.Key[idx])
+	}
+	return filtered, stats
 }
 
 // DistinctTempTable deduplicates a column that does not lead the index.
@@ -17,5 +34,26 @@ func DistinctOrdered(ix *Index, col string, p Pred) ([]int64, Stats) {
 //
 // The predicate filters entries; pass nil to keep everything.
 func DistinctTempTable(ix *Index, col string, p Pred) ([]int64, Stats) {
-	panic("DistinctTempTable is not implemented")
+	stats := Stats{}
+	idx := ix.ColIndex(col)
+	if idx == -1 {
+		return nil, stats
+	}
+	seen := make(map[int64]struct{})
+	stats.UsedTempTable = true
+	filtered := make([]int64, 0)
+	for _, entry := range ix.Keys {
+		stats.IndexEntriesRead++
+		if !p.evalEntry(ix, entry) {
+			continue
+		}
+		if _, ok := seen[entry.Key[idx]]; ok {
+			continue
+		}
+		stats.RowsReturned++
+		filtered = append(filtered, entry.Key[idx])
+		seen[entry.Key[idx]] = struct{}{}
+		stats.TempTableInserts++
+	}
+	return filtered, stats
 }

@@ -38,7 +38,9 @@ The two functions are the same loop with one line different — that difference 
 the entire concept. Read them side by side once you have written both.
 
 Implement them in `distinct.go`. Set `UsedTempTable` on the stats so the caller can
-tell which path ran, and so `Extra()` can report `Using temporary`.
+tell which path ran and so `Extra()` can report `Using temporary`. Count the rows
+the table received in `TempTableInserts` — that count is what makes the two paths
+differ in price.
 
 ## What you should see
 
@@ -46,5 +48,6 @@ tell which path ran, and so `Extra()` can report `Using temporary`.
 go test ./step3/
 ```
 
-Five tests. The last one runs both paths over the same data and checks they
-agree — the point being that the expensive path is not wrong, just expensive.
+Six tests. Two of them run both paths over the same data: one checks they agree
+on the values, the other checks the temp-table path costs more. The expensive
+path is not wrong, just expensive.

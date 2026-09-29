@@ -26,9 +26,18 @@ const (
 	// ScanCost is what one row costs in a sequential full scan. The scan
 	// reads everything anyway, in order, so each row is cheap.
 	ScanCost = 1
+
+	// TempInsertCost is what one row costs to put into a temporary table.
+	// It is memory the scan has to hold and a hash to compute, so it is not
+	// free the way a sequential read is — but nothing is being sought on
+	// disk, so it stays well below FetchCost.
+	TempInsertCost = 2
 )
 
 // Cost is the total work, in index-entry units.
 func (s Stats) Cost() int {
-	return s.IndexEntriesRead + s.RowsFetched*FetchCost + s.RowsScanned*ScanCost
+	return s.IndexEntriesRead +
+		s.RowsFetched*FetchCost +
+		s.RowsScanned*ScanCost +
+		s.TempTableInserts*TempInsertCost
 }

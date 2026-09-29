@@ -1,5 +1,7 @@
 package engine
 
+import "strings"
+
 // FullScan reads every row in the table and keeps the ones the predicate
 // accepts. No index is involved, so every condition is checked against the
 // full row.
@@ -68,8 +70,12 @@ func CoveringScan(t *Table, ix *Index, lo, hi []int64, p Pred) ([]Row, Stats) {
 // Both halves matter: an index scan that still read every row is not covered,
 // and neither is a full scan — it fetches nothing because it uses no index.
 func (s Stats) Extra() string {
-	if s.RowsFetched+s.RowsScanned == 0 {
-		return "Using index"
+	used := make([]string, 0)
+	if s.UsedTempTable {
+		used = append(used, "Using temporary")
 	}
-	return ""
+	if s.RowsFetched+s.RowsScanned == 0 {
+		used = append(used, "Using index")
+	}
+	return strings.Join(used, ";")
 }
