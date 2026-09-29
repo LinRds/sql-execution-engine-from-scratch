@@ -37,9 +37,5 @@ func (ix *Index) Seek(key []int64) int {
 //
 // The result is a contiguous slice of ix.Keys.
 func (ix *Index) RangeScan(lo, hi []int64) []Entry {
-	entries := make([]Entry, 0) // 没法估计一个合适的 cap，是不是需要有预估数据分布的能力
-	for i := ix.Seek(lo); i < ix.Seek(hi); i++ {
-		entries = append(entries, ix.Keys[i])
-	}
-	return entries
+	return ix.Keys[ix.Seek(lo):ix.Seek(hi)]
 }
