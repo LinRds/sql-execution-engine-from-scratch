@@ -12,9 +12,12 @@ type Pred []Cond
 // Covers reports whether every column the predicate touches is carried by
 // this index — that is, whether the predicate can be judged from an entry
 // instead of from the row.
+//
+// Every index carries the primary key, because that is what an entry points
+// with, so a condition on id is always covered.
 func (ix *Index) Covers(p Pred) bool {
 	for _, c := range p {
-		if ix.ColIndex(c.Col) < 0 {
+		if c.Col != "id" && ix.ColIndex(c.Col) < 0 {
 			return false
 		}
 	}
@@ -34,12 +37,36 @@ func (p Pred) eval(r Row) bool {
 // evalEntry reports whether an index entry satisfies every condition.
 //
 // It returns false for a condition on a column the index does not carry —
-// an entry cannot answer a question about a column it never stored.
+// an entry cannot answer a question about a column it never stored. The primary
+// key is the exception: it is what the entry points with, so it is always there.
 func (p Pred) evalEntry(ix *Index, e Entry) bool {
 	for _, c := range p {
+		if c.Col == "id" {
+			if !c.Ok(e.RowID) {
+				return false
+			}
+			continue
+		}
 		i := ix.ColIndex(c.Col)
 		if i < 0 || !c.Ok(e.Key[i]) {
 			return false
+		}
+	}
+	return true
+}
+
+func (p Pred) evalICP(ix *Index, e Entry) bool {
+	for _, c := range p {
+		if c.Col == "id" {
+			if !c.Ok(e.RowID) {
+				return false
+			}
+			continue
+		}
+		if idx := ix.ColIndex(c.Col); idx >= 0 {
+			if !c.Ok(e.Key[idx]) {
+				return false
+			}
 		}
 	}
 	return true

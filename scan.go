@@ -80,5 +80,8 @@ func (s Stats) Extra() string {
 	if s.UsedLooseScan {
 		used = append(used, "Using index for group-by")
 	}
+	if s.UsedICP {
+		used = append(used, "Using index condition")
+	}
 	return strings.Join(used, ";")
 }

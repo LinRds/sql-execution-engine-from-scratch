@@ -1,6 +1,7 @@
 package step5
 
 import (
+	"strings"
 	"testing"
 
 	"sql-execution-engine-from-scratch"
@@ -36,23 +37,27 @@ func condLt(col string, v int64) engine.Cond {
 	return engine.Cond{Col: col, Ok: func(x int64) bool { return x < v }}
 }
 
-// E1: a condition on a column the index carries can be settled on the entry,
-// before the row is fetched. Entries it rejects never reach the table.
+// E1: a condition the index carries is settled on the entry, before the row is
+// fetched. The primary key is carried by every index, so id counts too.
 func TestICP_FiltersBeforeFetchingTheRow(t *testing.T) {
 	tbl := sampleTable()
-	ix := engine.NewIndex("idx_staff_created", []string{"staff_id", "created_at"}, tbl.Rows)
+	ix := engine.NewIndex("idx_staff", []string{"staff_id"}, tbl.Rows)
 	p := engine.Pred{
-		condEq("staff_id", 1),
-		condGe("created_at", 1700000800),
-		condGe("id", 900),
+		condLt("id", 901),
+		condGe("created_at", 1700000500),
 	}
 
-	withICP, s := engine.ScanWithICP(tbl, ix, []int64{1, 0}, []int64{2, 0}, p)
-	withoutICP, plain := engine.ScanWithoutICP(tbl, ix, []int64{1, 0}, []int64{2, 0}, p)
+	withICP, s := engine.ScanWithICP(tbl, ix, []int64{1}, []int64{2}, p)
+	withoutICP, plain := engine.ScanWithoutICP(tbl, ix, []int64{1}, []int64{2}, p)
 
+	if !s.UsedICP {
+		t.Fatal("ICP did not engage — id is on every entry and created_at is not in this " +
+			"index, so the predicate has both a condition worth pushing and a row still " +
+			"worth fetching")
+	}
 	if s.RowsFetched >= plain.RowsFetched {
-		t.Fatalf("fetched %d rows with ICP and %d without — created_at is in this index, so the "+
-			"entries whose created_at is too old should have been rejected before any row was "+
+		t.Fatalf("fetched %d rows with ICP and %d without — id is on every entry, so the "+
+			"entries whose id is too large should have been rejected before any row was "+
 			"looked up", s.RowsFetched, plain.RowsFetched)
 	}
 	if len(withICP) != len(withoutICP) {
@@ -90,19 +95,33 @@ func TestNoICP_FiltersAfterFetchingTheRow(t *testing.T) {
 func TestICP_NeedsBothATableLookupAndAPushableCond(t *testing.T) {
 	tbl := sampleTable()
 	ix := engine.NewIndex("idx_staff_created", []string{"staff_id", "created_at"}, tbl.Rows)
+	created := engine.NewIndex("idx_created", []string{"created_at"}, tbl.Rows)
 
 	covering := engine.Pred{condEq("staff_id", 1), condGe("created_at", 1700000800)}
-	if _, s := engine.ScanWithICP(tbl, ix, []int64{1, 0}, []int64{2, 0}, covering); s.UsedICP {
-		t.Fatal("UsedICP is set for a predicate this index answers on its own — every condition " +
-			"can be settled on the entry, so no row has to be fetched to decide the query and " +
-			"there is no fetch left for a pushed condition to save")
+	_, s := engine.ScanWithICP(tbl, ix, []int64{1, 0}, []int64{2, 0}, covering)
+	if s.UsedICP {
+		t.Fatal("UsedICP is set for a predicate this index answers on its own — every " +
+			"condition can be settled on the entry, so no row has to be fetched to decide " +
+			"the query and there is no fetch left for a pushed condition to save")
+	}
+	if s.RowsFetched != s.IndexEntriesRead {
+		t.Fatalf("read %d entries and fetched %d rows — with nothing left to push this is "+
+			"the plain index scan: every entry in the range costs one fetch",
+			s.IndexEntriesRead, s.RowsFetched)
 	}
 
-	unpushable := engine.Pred{condGe("id", 900)}
-	if _, s := engine.ScanWithICP(tbl, ix, []int64{1, 0}, []int64{2, 0}, unpushable); s.UsedICP {
-		t.Fatal("UsedICP is set for a predicate with no condition on an indexed column — id is " +
-			"not in this index, so an entry has nothing to judge and every row in the range " +
-			"still has to be fetched and tested there")
+	keyed := engine.Pred{condEq("staff_id", 1), condGe("id", 900)}
+	if _, s := engine.ScanWithICP(tbl, ix, []int64{1, 0}, []int64{2, 0}, keyed); s.UsedICP {
+		t.Fatal("UsedICP is set for a predicate this index answers on its own — staff_id is " +
+			"a column of this index and id is on every index, so both conditions can be " +
+			"settled on the entry and no row has to be fetched to decide the query")
+	}
+
+	unpushable := engine.Pred{condEq("staff_id", 1)}
+	if _, s := engine.ScanWithICP(tbl, created, []int64{1700000800}, []int64{1700001000}, unpushable); s.UsedICP {
+		t.Fatal("UsedICP is set for a predicate with no condition on an indexed column — " +
+			"staff_id is not in this index, so an entry has nothing to judge and every row " +
+			"in the range still has to be fetched and tested there")
 	}
 }
 
@@ -111,18 +130,17 @@ func TestICP_NeedsBothATableLookupAndAPushableCond(t *testing.T) {
 // never in the index to begin with.
 func TestICP_ReducesFetchesButNeverEliminatesThem(t *testing.T) {
 	tbl := sampleTable()
-	ix := engine.NewIndex("idx_staff_created", []string{"staff_id", "created_at"}, tbl.Rows)
+	ix := engine.NewIndex("idx_created", []string{"created_at"}, tbl.Rows)
 	p := engine.Pred{
+		condLt("created_at", 1700000900),
 		condEq("staff_id", 1),
-		condGe("created_at", 1700000800),
-		condGe("id", 900),
 	}
 
-	_, s := engine.ScanWithICP(tbl, ix, []int64{1, 0}, []int64{2, 0}, p)
+	_, s := engine.ScanWithICP(tbl, ix, []int64{1700000800}, []int64{1700001000}, p)
 
 	if s.RowsFetched == 0 {
-		t.Fatal("no row was fetched — but id is not in this index, so the entries that survived " +
-			"created_at still have to be looked up before id can be judged")
+		t.Fatal("no row was fetched — but staff_id is not in this index, so the entries that " +
+			"survived created_at still have to be looked up before staff_id can be judged")
 	}
 	if s.RowsFetched >= s.IndexEntriesRead {
 		t.Fatalf("fetched %d rows for %d entries — the pushed condition was supposed to cut the "+
@@ -164,5 +182,28 @@ func TestICP_SavesNothingWhenTheRangeIsAlreadyExact(t *testing.T) {
 		t.Fatalf("read %d entries with ICP and %d without — pushing a condition down changes "+
 			"when an entry is judged, never how much of the index is walked",
 			withICP.IndexEntriesRead, withoutICP.IndexEntriesRead)
+	}
+}
+
+// E6: the flag reaches EXPLAIN. A condition judged on the entry is what the
+// Extra column reports as "Using index condition".
+func TestICP_ReportsUsingIndexCondition(t *testing.T) {
+	tbl := sampleTable()
+	ix := engine.NewIndex("idx_created", []string{"created_at"}, tbl.Rows)
+	p := engine.Pred{
+		condLt("created_at", 1700000900),
+		condEq("staff_id", 1),
+	}
+
+	_, s := engine.ScanWithICP(tbl, ix, []int64{1700000800}, []int64{1700001000}, p)
+	if !strings.Contains(s.Extra(), "Using index condition") {
+		t.Fatalf("Extra is %q — created_at was judged on the entry before any row was fetched, "+
+			"and that is what EXPLAIN reports as Using index condition", s.Extra())
+	}
+
+	_, plain := engine.ScanWithoutICP(tbl, ix, []int64{1700000800}, []int64{1700001000}, p)
+	if strings.Contains(plain.Extra(), "Using index condition") {
+		t.Fatalf("Extra is %q — this scan judged nothing on the entry, so it has no pushed "+
+			"condition to report", plain.Extra())
 	}
 }
